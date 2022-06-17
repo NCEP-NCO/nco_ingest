@@ -1,0 +1,15 @@
+utc_time
+jday
+year
+frac_total_cld
+frac_water_cld
+frac_ice_cld
+frac_low_cld_sw
+frac_mid_cld_sw
+frac_high_cld_sw
+cld_temp_sw
+cld_emiss_sw
+cld_opd_vis
+cld_reff_vis
+lwp_vis
+iwp_vis

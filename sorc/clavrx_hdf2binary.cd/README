@@ -1,0 +1,8 @@
+24 October 2006:
+   Created the conversion software to turn hdf files into 
+binary files.  This is the MIST version.  On the old BLUE 
+machine, the 'C' compiler was in /usr/bin/cc, while on 
+MIST its /usr/vac/bin/cc.  So I added /usr/vac/bin to my 
+PATH!   Once I had created the executable in /cr8MIST.exec, 
+I replaced the BLUE executable and .o files, all in 
+/global/save/HDF.dir/clavrx, with the MIST version!

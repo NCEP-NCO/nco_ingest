@@ -1,0 +1,249 @@
+#!/bin/sh
+set -xa
+export PS4='+ ${SECONDS}s + '
+date -u
+hour=${hour:-`date -u +%H`}
+min=${min:-`date -u +%M`}
+
+echo " start running COMMON.TOP "
+echo "Current NCO_INGEST version is $nco_ingest_ver"
+echo "Current SATINGEST version is $satingest_ver"
+
+########################################
+# Check that required variables are set
+########################################
+set +x
+echo
+echo envir is ${envir}
+echo job is ${job}
+echo TASK is ${TASK}
+echo
+set -x
+
+
+###################################################################
+## Set DEBUG LEVEL - modifies info in execution trace prompt string
+####################################################################
+export DEBUG_LEVEL=${DEBUG_LEVEL=1}
+case $DEBUG_LEVEL in
+  1) export PS4='+ ${SECONDS}s + ' ;;       # add seconds (this is typical case)
+  0) export PS4='+ ';;                      # don't include seconds (useful if
+                                            #  want to diff output from 2 runs)
+  2) export PS4='+ ${SECONDS}s:L$LINENO + ';;         # add script line #
+  3) export PS4='+ ${SECONDS}s:${0##*/}:L$LINENO + ';;# add script name & line #
+  *) echo "Unrecognized DEBUG_LEVEL.  Stay with current PS4 setting";;
+esac
+
+######################################
+## Specify NET, RUN and DATATYPE Names
+#######################################
+export NET=${NET:-ingest}
+export RUN=${RUN:-$TASK}
+export DATATYPE=${DATATYPE:-${TASK^^}}
+
+###############################
+# Create new working directory
+###############################
+export DATA=${DATA:-${DATAROOT:?}/${jobid:?}}
+mkdir -p $DATA
+cd $DATA
+
+######################################
+# Set job log file for postmsg output
+######################################
+export jlogfile=${jlogfile:-${DATA}/jlogfile}
+export pgmout="OUTPUT.$$"
+
+###############################################
+## SENDECF  - Flag Events on ECFLOW
+## SENDBB   - Allow to talk back to Big Brother
+################################################
+export SENDECF=${SENECF:-YES}
+export SENDBB=${SENDBB:-YES}
+
+####################################
+## Set up ingest related directories
+#####################################
+export USERDIR=${USERDIR:-${DCOMROOT}/ingest_hist}
+export TANKDIR=${TANKDIR:-${DCOMROOT}}
+export OUTDIR=${OUTDIR:-${DCOMROOT}/ingest_logs}
+export BBDIR=${BBDIR:-${COMROOT:?}/logs/bb/ingest}
+mkdir -p $USERDIR $TANKDIR $OUTDIR
+
+##########################
+# Specify Execution Areas
+##########################
+
+# RUN_TYPE used by pgms BUFR_TRANJB and BUFR_TRANMTYPSBT to determine priority
+# path directory for bufrtab.XXX files which they read - here set to
+# "satingest" so priority path directory is $FIXsatingest and second
+# choice (if bufrtab.XXX file not found in $FIXsatingest) is $FIXbufr
+# (other choice for RUN_TYPE is "decoder" which reverses priority)
+# ----------------------------------------------------------------------------
+export RUN_TYPE=${RUN_TYPE:-satingest}
+
+#######################################################################
+# whild most ingest jobs share ush/exec/fix with satingest, icloud
+# needs some scripts/tables which could not fine in satingest.
+# For those files, looking for them under $PACKAGEROOT/nco_ingest.$ver/.
+#######################################################################
+export HOMEbufr=${HOMEnco_ingest}
+export TABLEDIR=${HOMEnco_ingest}/fix
+export EXECbufr=$HOMEbufr/exec
+export FIXbufr=$HOMEbufr/fix
+export USHbufr=$HOMEbufr/ush
+export USHobsproc_satingest=$HOMEbufr/ush
+export EXECobsproc_satingest=$HOMEbufr/exec
+
+# Paths for obsproc_shared_bufr_cword items
+# -----------------------------------------
+export EXECobsproc_shared_bufr_cword=$CWORDX
+export USHobsproc_shared_bufr_cword=$CWORDush
+export TRANJBush=$TRANush
+
+# Paths for non-obsproc items
+# ---------------------------
+# ... $FIXsatingest is  populated with all of the bufrtab.XXX
+#     files read by bufr_tranjb.sh and ingest_translate_orbits.sh, so to be
+#     safe the second choice directory path to retrieve these files ($FIXbufr)
+#     is being exported as /dev/null - the reasoning being that it is better
+#     for the jobs to fail than to read a bufrtab.XXX that might be obsolete
+#     if, for some bizarre reason, the bufrtab.XXX files are not found in
+#     $FIXsatingest.
+# ... $FIXsatingest is also populated with $TASK and $TASK.$family
+#     files read by JISATINGEST.
+#     -------------------------------------------------------------------------
+export FIXbufr=/dev/null
+
+################################################################
+# Copy utility scripts for bufr_tranjb - will remove once bufr_tranjb updated?
+################################################################
+cp $UTILROOT/ush/finddate.sh   .; chmod +x finddate.sh
+cp $UTILROOT/ush/err_chk   .; chmod +x err_chk
+cp $UTILROOT/ush/err_exit  .; chmod +x err_exit
+cp $UTILROOT/ush/prep_step .; chmod +x prep_step
+cp $UTILROOT/ush/postmsg   .; chmod +x postmsg
+cp $UTILROOT/ush/startmsg .; chmod +x startmsg
+cp $UTILROOT/ush/setpdy.sh .; chmod +x setpdy.sh
+##########################################
+
+export DECDROOT=${DECDROOT:-$OPSROOT/decoders}
+export USHbufr=${USHbufr:-$DECDROOT/decod_dcncld/ush}
+
+export DCNCLD=${DCNCLD:-$DECDROOT/decod_dcncld/exec/decod_dcncld}
+
+env
+
+####################################
+## Set-up ingest processing families
+#####################################
+
+export HISTLENMIN=75
+export HISTLENMAX=100
+export DEBUGSCRIPTS=ON
+export COPYFORWARD=NO
+export ndayarch=10
+export MACHINE=coastwatch.glerl.noaa.gov
+export cycle=t${cyc}z
+
+PART1=YES
+PART2=YES
+
+if [ $PART1 = YES ]; then
+###############################################################################
+#                    PART 1 - FILES FROM ftp.glerl.noaa.gov SYSTEM
+###############################################################################
+
+  export TRANSFER_COMMAND=wget
+
+  set GLSST_daily
+# set GLSST_analysis
+
+  export nfiles=$#
+
+  n=0
+  for dtyp
+  do
+     n=`expr $n + 1`
+
+     if [ "$dtyp" = 'GLSST_daily' ]; then
+
+#  Great Lakes Daily Lake Average Surface Water Temperature
+#  --------------------------------------------------------
+       eval dsname${n}="erddap/files/glsea-avgtemps2/glsea-temps_1024.dat"
+       eval dsname_hist${n}="glsea-temps.dat"
+       eval TANKSUBDIR${n}=wtxtbul
+       eval TANKFILE${n}="glsea-temps.dat"
+       eval HOURS2ALARM${n}=30
+     fi
+     export dsname${n} dsname_hist${n} 
+     export TANKSUBDIR${n} TANKFILE${n} HOURS2ALARM${n}
+  done
+
+###################################################
+# Execute the script
+###################################################
+  export WGET_PROTOCOL=https
+  ${HOMEbufr}/scripts/existday.sh
+  unset WGET_PROTOCOL
+fi
+
+
+if [ $PART2 = YES ]; then
+###############################################################################
+#                    PART 2 - FILES FROM 140.90.121.83 SYSTEM
+###############################################################################
+  unset MACHINE HISTLENMIN HISTLENMAX
+  unset DEBUGSCRIPTS COPYFORWARD ndayarch
+  unset dsname1 dsname2 dsname_hist1 dsname_hist2
+  unset TANKSUBDIR1 TANKSUBDIR2
+  unset TANKFILE1 TANKFILE2 HOURS2ALARM1 HOURS2ALARM2
+
+  export HISTLENMIN=75
+  export HISTLENMAX=100
+  export MACHINE=137.75.111.166
+  export ndayarch=10
+  export DEBUGSCRIPTS=ON
+  export TRANSFER_COMMAND=wget
+
+  set GLAVGWL
+
+  export nfiles=$#
+
+  n=0
+  for dtyp
+  do
+     n=`expr $n + 1`
+
+     if [ "$dtyp" = 'GLAVGWL' ]; then
+
+#  Great Lakes Average Wavelength
+#  ---------------------------------------------------
+
+        eval dsname${n}="pub/outgoing/ofs/nos_glavewl.dat"
+        # "ofs" in above line used to be "NCEP"; if there is a "No such directory"
+        # error in ingest_get, this may be a sign of the remote path changing
+        eval dsname_hist${n}="nos_glavewl.dat"
+        eval TANKSUBDIR${n}=wtxtbul
+        eval TANKFILE${n}="nos_glavewl.dat"
+        eval HOURS2ALARM${n}=30
+
+     fi
+
+     export dsname${n} dsname_hist${n} 
+     export TANKSUBDIR${n} TANKFILE${n} HOURS2ALARM${n}
+  done
+
+###################################################
+# Execute the script
+###################################################
+  ${HOMEbufr}/scripts/existday.sh
+fi
+
+cat $pgmout
+
+if [ "${KEEPDATA^^}" != YES ]; then
+  rm -rf $DATA
+fi
+date -u
+

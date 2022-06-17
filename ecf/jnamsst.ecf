@@ -1,0 +1,37 @@
+#PBS -N nco_ingest_namsst_%TIME%
+#PBS -j oe
+#PBS -S /bin/bash
+#PBS -q %QUEUESERV%
+#PBS -A %PROJ%-%PROJENVIR%
+#PBS -l walltime=01:00:00
+#PBS -l place=vscatter,select=1:ncpus=1:mem=%MEM%MB
+#PBS -l debug=true
+
+model=nco_ingest
+
+%include <head.h>
+%include <envir-p1.h>
+
+export cyc=`date -u +%%H`
+export TASK=%TASK%
+export TASK=${TASK#*_}
+
+# Primary: 140.90.190.143
+# Backup: 140.172.119.158
+export PDA_SERVER=%PDA_SERVER%
+
+# Load requisite modules
+module load intel/${intel_ver}
+module load bufr_tranjb/${bufr_tranjb_ver}
+module list
+
+${HOMEnco_ingest}/jobs/JINAMSST
+
+%include <tail.h>
+
+%manual
+######################################################################
+TASKSCRIPT DOCUMENTATION BLOCK
+PURPOSE:  To execute the job that ingests %TASK% data from NESDIS.
+######################################################################
+%end

@@ -1,0 +1,19 @@
+suite prod
+  family primary
+  family cron
+  family nco_ingest
+  edit PROJ 'NCO'
+  family v1.1
+    edit PACKAGEHOME '/lfs/h1/ops/%ENVIR%/packages/nco_ingest.%nco_ingest_ver%'
+    edit PDA_SERVER '140.90.190.143'
+    edit MEM '500'
+    edit QUEUESERV 'prod_transfer'
+    task jcloud
+      cron 00:50 23:50 01:00
+    task jnamsst
+      cron 07:00
+      cron 15:00
+  endfamily
+  endfamily
+  endfamily
+endsuite
